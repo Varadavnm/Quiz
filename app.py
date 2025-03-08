@@ -6,11 +6,15 @@ import google.generativeai as genai
 
 # Load API Key
 load_dotenv()
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
+API_KEY = os.getenv("GOOGLE_API_KEY")
+if API_KEY:
+    genai.configure(api_key=API_KEY)
+else:
+    st.error("API Key not found! Please check your .env file.")
 # Initialize Gemini Models
-query_refinement_model = genai.GenerativeModel("gemini-2.0-pro")
-question_generation_model = genai.GenerativeModel("gemini-2.0-flash")
+query_refinement_model = genai.GenerativeModel("gemini-1.5-pro")
+question_generation_model = genai.GenerativeModel("gemini-1.5-flash")
 
 # Function to get refined query from user input
 def refine_query(user_input):
@@ -177,3 +181,4 @@ if generate_quiz:
                 st.rerun()
         else:
             st.error("Sorry, I couldn't determine the topic. Please try again!")
+
