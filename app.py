@@ -1,3 +1,4 @@
+# Description: A simple math tutor chatbot using the Gemini AI API to generate math questions and solutions.
 import streamlit as st
 import os
 import sqlite3
@@ -12,11 +13,14 @@ if API_KEY:
     genai.configure(api_key=API_KEY)
 else:
     st.error("API Key not found! Please check your .env file.")
+models = genai.list_models()
+# for model in models:
+#     print(model.name)
 # Initialize Gemini Models
-query_refinement_model = genai.GenerativeModel("gemini-1.5-pro")
-question_generation_model = genai.GenerativeModel("gemini-1.5-flash")
+query_refinement_model = genai.GenerativeModel("gemini-2.0-flash-lite")
+question_generation_model = genai.GenerativeModel("gemini-2.0-flash-thinking-exp")
 
-# Function to get refined query from user input
+# Function to refine user input into structured query
 def refine_query(user_input):
     prompt = f"""
     You are a math tutor's assistant. Given a raw user input, refine it into a clear and structured query.
@@ -40,7 +44,7 @@ def get_gemini_response(prompt):
     except Exception as e:
         return f"Error: {str(e)}"
 
-# Initialize database
+# Initialize SQLite database
 def initialize_db():
     conn = sqlite3.connect("math_tutor.db")
     cursor = conn.cursor()
@@ -142,6 +146,22 @@ def get_questions(topic):
     
     return questions, solutions
 
+# Function to evaluate quiz and display score
+def evaluate_quiz(answers, solutions):
+    correct_count = 0
+    total_questions = len(solutions)
+    
+    results = []
+    for idx, (user_answer, correct_answer) in enumerate(zip(answers, solutions)):
+        if user_answer.strip().lower() == correct_answer.strip().lower():
+            correct_count += 1
+            results.append(f"✅ Q{idx+1}: Correct!")
+        else:
+            results.append(f"❌ Q{idx+1}: Incorrect! Solution: {correct_answer}")
+
+    score = f"**Your Score: {correct_count} / {total_questions}**"
+    return score, results
+
 # Initialize the database
 initialize_db()
 
@@ -151,9 +171,30 @@ st.header("📚 Gemini Math Tutor 🤖")
 
 # User input field for customized quiz
 user_input = st.text_input("Enter your quiz request (e.g., 'Give me algebra questions'):")
-generate_quiz = st.button("Generate Quiz")
+# generate_quiz = st.button("Generate Quiz")
 
-if generate_quiz:
+import streamlit as st
+
+# Initialize session state variables
+if "generate_quiz" not in st.session_state:
+    st.session_state.generate_quiz = False
+if "questions" not in st.session_state:
+    st.session_state.questions = []
+if "solutions" not in st.session_state:
+    st.session_state.solutions = []
+if "user_answers" not in st.session_state:
+    st.session_state.user_answers = []
+if "quiz_submitted" not in st.session_state:
+    st.session_state.quiz_submitted = False
+
+# Button to start quiz
+if st.button("Generate Quiz", key="generate_quiz_button"):
+    st.session_state.generate_quiz = True
+    st.session_state.quiz_submitted = False  # Reset submission state
+
+if st.session_state.generate_quiz:
+    user_input = st.text_input("Enter a math topic:")
+
     if user_input:
         refined_query = refine_query(user_input)
         st.write(f"🔍 **Refined Query:** {refined_query}")
@@ -164,21 +205,35 @@ if generate_quiz:
             if t.lower() in refined_query.lower():
                 topic = t
                 break
-        
+
         if topic:
             st.subheader(f"📝 Answer These {topic} Questions:")
 
-            questions, solutions = get_questions(topic)
+            # Fetch questions only once
+            if not st.session_state.questions or st.session_state.quiz_submitted:
+                st.session_state.questions, st.session_state.solutions = get_questions(topic)
+                st.session_state.user_answers = [""] * len(st.session_state.questions)
+                st.session_state.quiz_submitted = False  # Reset submission state
 
-            for idx, (question, solution) in enumerate(zip(questions, solutions), 1):
-                st.write(f"**Q{idx}:** {question}")
-                user_answer = st.text_input(f"Your answer to Q{idx}:", key=f"answer_{idx}")
+            # Display questions and collect answers
+            for idx, question in enumerate(st.session_state.questions):
+                st.write(f"**Q{idx+1}:** {question}")
+                st.session_state.user_answers[idx] = st.text_input(
+                    f"Your answer to Q{idx+1}:",
+                    key=f"answer_input_{idx}",
+                    value=st.session_state.user_answers[idx]
+                )
 
-                with st.expander(f"Show Solution for Q{idx}"):
-                    st.write(f"**Solution:** {solution}")
+            # Ensure Submit button appears only once
+            if not st.session_state.quiz_submitted:
+                if st.button("Submit Answers", key="submit_quiz_button"):
+                    score, results = evaluate_quiz(st.session_state.user_answers, st.session_state.solutions)
+                    st.session_state.quiz_submitted = True  # Mark quiz as submitted
 
-            if st.button("Get More Questions"):
-                st.rerun()
+                    # Display results
+                    st.subheader(score)
+                    for result in results:
+                        st.write(result)
+
         else:
             st.error("Sorry, I couldn't determine the topic. Please try again!")
-
